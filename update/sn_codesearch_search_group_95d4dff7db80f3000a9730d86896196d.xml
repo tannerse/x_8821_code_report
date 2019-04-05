@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sn_codesearch_search_group">
+    <sn_codesearch_search_group action="INSERT_OR_UPDATE">
+        <description/>
+        <extended_matching>false</extended_matching>
+        <name>x_8821_code_report.Updates</name>
+        <suffix>Updates</suffix>
+        <sys_class_name>sn_codesearch_search_group</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2019-03-14 21:54:37</sys_created_on>
+        <sys_id>95d4dff7db80f3000a9730d86896196d</sys_id>
+        <sys_mod_count>2</sys_mod_count>
+        <sys_name>x_8821_code_report.Updates</sys_name>
+        <sys_package display_value="Code Report" source="x_8821_code_report">8a6c1a33db0033007d159235ca961989</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Code Report">8a6c1a33db0033007d159235ca961989</sys_scope>
+        <sys_update_name>sn_codesearch_search_group_95d4dff7db80f3000a9730d86896196d</sys_update_name>
+        <sys_updated_by>diego.santiago</sys_updated_by>
+        <sys_updated_on>2019-03-15 08:19:01</sys_updated_on>
+    </sn_codesearch_search_group>
+</record_update>

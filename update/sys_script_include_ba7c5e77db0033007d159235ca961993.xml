@@ -8,10 +8,30 @@
         <name>Utils</name>
         <script><![CDATA[var Utils = Class.create();
 Utils.prototype = {
-    initialize: function() {
-    },
+	initialize: function() {
+	},
+	run: function(){
+		var returnObj = {};
+		returnObj.businessRules = this._getBusinessRules();
+		returnObj.scriptIncludes = this._getScriptIncludes();
+		returnObj.uiPolicies = this._getUIPoliciesScripts();
+		returnObj.clientScripts = this._getClientScripts();
+		return returnObj;		
+	},
+	instanceCreateDate: (function(){
+		var properties = new GlideRecord('sys_properties');
+		if(properties.get('name','instance_name')){
+			return new GlideDateTime(properties.sys_created_on);
+		} else {
+			return null;
+		}
+	})(),
+	instance:(function(){
+		return 'https://' + gs.getProperty('instance_name') + '.service-now.com/nav_to.do?uri=';
+	})(),
 	/*
 Server Side
+- [] Avoid Global BR
 - [] Before BR Should not insert or update records
 - [] Avoid Eval
 - [] Avoid Sysids in code
@@ -21,17 +41,87 @@ Server Side
 - [] search transform scripts onbefore for .insert() .update() as they shouldnt do that.
 - [] search code for the use of getResponse() as its a soap method that should be used.
 - [] search transform maps where business rules are enabled and suggest to disable them.
-
 Client Scripts
-- [] Avoid $
-- [] Avoid top
-- [] Avoid window
-- [] Avoid $j
-- [] Avoid jQuery
-- [] Avoid document
-- [] Use GlideAjax instead of GlideRecord
+- [x] Avoid $
+- [x] Avoid top
+- [x] Avoid window
+- [x] Avoid $j
+- [x] Avoid jQuery
+- [x] Avoid document
+- [x] Use GlideAjax instead of GlideRecord
+- [] g_form.field.getReference() Should use a callback
+UI Policies
+- [x] Avoid $
+- [x] Avoid top
+- [x] Avoid window
+- [x] Avoid $j
+- [x] Avoid jQuery
+- [x] Avoid document
+- [x] Use GlideAjax instead of GlideRecord
 - [] g_form.field.getReference() Should use a callback
 	*/
+	clientTests: [
+		{
+			regex: /^(function on)((.*)\n)+\}$/gm,
+			error: "Not wrapped in function",
+			expect: true
+		},{
+			regex: /(\s)\$(\.|\()/gm,
+			error: "Do not use Prototype ($) as it's not supported on SP or Mobile",
+			expect: false
+		},{
+			regex: /(\s)\$j(\.|\()/gm,
+			error: "Do not use jQuery ($j) as it's not supported on SP or Mobile",
+			expect: false
+		},{
+			regex: /(\s)\jQuery(\.|\()/gm,
+			error: "Do not use jQuery as it's not supported on SP or Mobile",
+			expect: false
+		},{
+			regex: /(\s)\top(\.|\[)/gm,
+			error: "Do not use top as it's not supported on SP or Mobile",
+			expect: false
+		},{
+			regex: /(\s)\window(\.|\[)/gm,
+			error: "Do not use window as it's not supported on SP or Mobile",
+			expect: false
+		},{
+			regex: /(\s)\document(\.|\[)/gm,
+			error: "Do not use document as it's not supported on SP or Mobile",
+			expect: false
+		},{
+			regex: /(\s)eval\(/gm,
+			error: "Do not use eval, use bracket notation if possible",
+			expect: false
+		},{
+			regex: /new GlideRecord/gm,
+			error: "Use GlideAjax instead of GlideRecord",
+			expect: false
+		},{
+			regex: /\.getReference\(\)/gm,
+			error: "getReference should have a callback",
+			expect: false
+		}
+	],
+	serverTests: [
+		{
+			regex: /('|"|`)[a-f0-9]{32}('|"|`)/gm,
+			error: "Do not use hard-coded sys_ids",
+			expect: false
+		},{
+			regex: /(\s)eval\(/gm,
+			error: "Do not use eval",
+			expect: false
+		},{
+			regex: /(\s)\getRowCount\(/gm,
+			error: "GlideAggregate should be used instead of getRowCount",
+			expect: false
+		}/*,{
+				regex: /(\s)\GlideRecord\(/gm,
+				error: "GlideRecordSecure should be used when possible",
+				expect: false
+			}*/
+	],
 	_search: function(term){
 		var returnArr = [];
 		var cs = new sn_codesearch.CodeSearch();
@@ -52,84 +142,135 @@ Client Scripts
 		});
 		return returnArr;
 	},
-	_getGlobalBusinessRules: function(){
-		//can't be run in scope...
+	_getBusinessRules: function(){
+		/*
+		- [x] Avoid Global BR
+		- [x] Before BR Should not insert or update records
+		- [x] Avoid Eval
+		- [x] Avoid Sysids in code
+		- [x] BR should be wrapped in a function
+		- [] Avoid undocumented apis
+		- [] Check if script/code does not make use of foreign tables without GlideRecordSecure
+		- [] search code for the use of getResponse() as its a soap method that should be used.
+		*/
 		var returnArr = [];
-		Object.keys(this).forEach(function(thing){
-			try {
-				var type_of_thing = typeof thing;
-				if(type_of_thing === 'function'){
-					returnArr.push(thing);
-				}
-			} catch(e) {
-				gs.info('error',JSON.stringify(e));
+		var tests = this.serverTests.concat([{
+			regex: /^(function)((.*)\n)+}$/gm,
+			error: "Not wrapped in function",
+			expect: true
+		}]);
+		var br = new GlideRecord('sys_script');
+		br.addQuery('active','true');
+		br.addQuery('sys_updated_on','>', this.instanceCreateDate);//exclude these as mainy oob
+		br.query();
+		while(br.next()){
+			var script = br.getValue('script') || "";
+			var errors = [];
+			if(br.getValue('collection') === 'global'){
+				errors.push('Avoid Global Business Rules');
 			}
-		});
+			if(br.getValue('when') === 'before'){
+				if(script.indexOf('insert()')>=0){
+					errors.push('Avoid insert() in before business rules');
+				}
+				if(script.indexOf('update()')>=0){
+					errors.push('Avoid update() in before business rules');
+				}
+			}
+			this.serverTests.forEach(function(test){
+				var passes = test.regex.test(script);
+				if(passes != test.expect){
+					errors.push(test.error);
+				}
+			});
+			if(errors.length>0){
+				returnArr.push({
+					name: br.getValue('name'),
+					sys_id: br.getValue('sys_id'),
+					updated_by: br.getValue('sys_updated_by'),
+					link: this.instance + br.getValue('sys_class_name') + '.do?sys_id=' + br.getValue('sys_id'),
+					errors: errors
+				});
+			}
+		}
 		return returnArr;
 	},
-	_getGetRowCounts: function(){
-		return this.search('.getRowCount()');
+	_getScriptIncludes: function(){
+		/*
+		- [x] Avoid Eval
+		- [x] Avoid Sysids in code
+		- [] Avoid undocumented apis
+		- [] Check if script/code does not make use of foreign tables without GlideRecordSecure
+		- [] search code for the use of getResponse() as its a soap method that should be used.
+		*/
+		var returnArr = [];
+		var si = new GlideRecord('sys_script_include');
+		si.addQuery('active','true');
+		si.addQuery('sys_updated_on','>', this.instanceCreateDate);//exclude these as mainy oob
+		si.query();
+		while(si.next()){
+			var script = si.getValue('script') || "";
+			var errors = [];
+			this.serverTests.forEach(function(test){
+				var passes = test.regex.test(script);
+				if(passes != test.expect){
+					errors.push(test.error);
+				}
+			});
+			if(errors.length>0){
+				returnArr.push({
+					name: si.getValue('name'),
+					sys_id: si.getValue('sys_id'),
+					updated_by: si.getValue('sys_updated_by'),
+					link: this.instance + si.getValue('sys_class_name') + '.do?sys_id=' + si.getValue('sys_id'),
+					errors: errors
+				});
+			}
+		}
+		return returnArr;
+	},
+	_getUIPoliciesScripts: function(){
+		var returnArr = [];
+		var up = new GlideRecord('sys_ui_policy');
+		up.addQuery('active','true');
+		up.addQuery('run_scripts','true');
+		up.addQuery('sys_updated_on','>', this.instanceCreateDate);//exclude these as mainy oob
+		up.query();
+		while(up.next()){
+			var script_true = up.getValue('script_true') || "";
+			var script_false = up.getValue('script_false') || "";
+			var errors = [];
+			this.clientTests.forEach(function(test){
+				var passes1 = test.regex.test(script_true);
+				var passes2 = test.regex.test(script_false);
+				if(passes1 != test.expect || passes2 != test.expect){
+					errors.push(test.error);
+				}
+			});
+			if(errors.length>0){
+				returnArr.push({
+					name: up.getValue('short_description'),
+					sys_id: up.getValue('sys_id'),
+					updated_by: up.getValue('sys_updated_by'),
+					link: this.instance + up.getValue('sys_class_name') + '.do?sys_id=' + up.getValue('sys_id'),
+					errors: errors
+				});
+			}
+		}
+		return returnArr;
 	},
 	_getClientScripts: function(){
 		var returnArr = [];
-		var tests = [
-			{
-				regex: /^(function on)((.*)\n)+}$/gm,
-				error: "Not wrapped in function",
-				expect: true
-			},{
-				regex: /(\s)\$(\.|\()/gm,
-				error: "Do not use Prototype ($) as it's not supported on SP or Mobile",
-				expect: false
-			},{
-				regex: /(\s)\$j(\.|\()/gm,
-				error: "Do not use jQuery ($j) as it's not supported on SP or Mobile",
-				expect: false
-			},{
-				regex: /(\s)\jQuery(\.|\()/gm,
-				error: "Do not use jQuery as it's not supported on SP or Mobile",
-				expect: false
-			},{
-				regex: /(\s)\top(\.|\[)/gm,
-				error: "Do not use top as it's not supported on SP or Mobile",
-				expect: false
-			},{
-				regex: /(\s)\window(\.|\[)/gm,
-				error: "Do not use window as it's not supported on SP or Mobile",
-				expect: false
-			},{
-				regex: /(\s)\document(\.|\[)/gm,
-				error: "Do not use document as it's not supported on SP or Mobile",
-				expect: false
-			},{
-				regex: /(\s)eval\(/gm,
-				error: "Do not use eval, use bracket notation if possible",
-				expect: false
-			},{
-				regex: /new GlideRecord/gm,
-				error: "Use GlideAjax instead of GlideRecord",
-				expect: false
-			},{
-				regex: /\.getReference\(\)/gm,
-				error: "getReference should have a callback",
-				expect: false
-			}
-		];
 		var cs = new GlideRecord('sys_script_client');
 		cs.query();
 		cs.addQuery('active','true');
-//		cs.addQuery('sys_id','53b409411b12210097871e094f071372');
+		cs.addQuery('sys_updated_on','>', this.instanceCreateDate);//exclude these as mainy oob
 		cs.query();
 		while (cs.next()) {   // iterate through records
 			var script = cs.getValue('script') || "";
 			var errors = [];
-			tests.forEach(function(test){
-				gs.info(JSON.stringify(test));
+			this.clientTests.forEach(function(test){
 				var passes = test.regex.test(script);
-				//gs.info('script: ' + script);
-				//gs.info('regex : ' + test.regex);
-				//gs.info('passes: ' + passes);
-				//gs.info('expect: ' + test.expect);
 				if(passes != test.expect){
 					errors.push(test.error);
 				}
@@ -138,52 +279,27 @@ Client Scripts
 				returnArr.push({
 					name: cs.getValue('name'),
 					sys_id: cs.getValue('sys_id'),
-					//link: cs.getLink(),
+					updated_by: cs.getValue('sys_updated_by'),
+					link: this.instance + cs.getValue('sys_class_name') + '.do?sys_id=' + cs.getValue('sys_id'),
 					errors: errors
 				});
 			}
 		}
 		return returnArr;
 	},
-	_getBusinessRulesNotWrappedInFx: function(){
-		var returnArr = [];
-		var br = new GlideRecord('sys_script');
-		br.addQuery('active','true');
-		//br.addQuery('sys_id','d59048357f00000101201a5caa73fc8e');
-		br.query();
-		while(br.next()){
-			var script = br.getValue('script') || "";
-			var regex = /^(\(function executeRule)((.*)\n)+(}\)\(current, previous\);)$/gm;
-			//gs.info(script);
-			var isWellFormed = regex.test(script);
-			gs.info('isWellFormed: ' + isWellFormed);
-			if(isWellFormed === false){
-				returnArr.push({
-					name: br.getValue('name'),
-					sys_id: br.getValue('sys_id'),
-					link: br.getLink()
-				});
-			}
-		}
-		return returnArr;
-	},
-	tests: [
-		{
-		}
-	],
-    type: 'Utils'
+	type: 'Utils'
 };]]></script>
         <sys_class_name>sys_script_include</sys_class_name>
         <sys_created_by>jacebenson</sys_created_by>
         <sys_created_on>2019-03-14 17:48:22</sys_created_on>
         <sys_id>ba7c5e77db0033007d159235ca961993</sys_id>
-        <sys_mod_count>47</sys_mod_count>
+        <sys_mod_count>53</sys_mod_count>
         <sys_name>Utils</sys_name>
         <sys_package display_value="Code Report" source="x_8821_code_report">8a6c1a33db0033007d159235ca961989</sys_package>
         <sys_policy>read</sys_policy>
         <sys_scope display_value="Code Report">8a6c1a33db0033007d159235ca961989</sys_scope>
         <sys_update_name>sys_script_include_ba7c5e77db0033007d159235ca961993</sys_update_name>
-        <sys_updated_by>jacebenson</sys_updated_by>
-        <sys_updated_on>2019-03-14 20:23:07</sys_updated_on>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2019-03-19 12:22:21</sys_updated_on>
     </sys_script_include>
 </record_update>

@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>public</access>
+        <active>true</active>
+        <api_name>x_8821_code_report.UpdateSetComplianceUtil</api_name>
+        <client_callable>false</client_callable>
+        <description>gs.info(JSON.stringify(new UpdateSetComplianceUtil().runReport(), null, 4));</description>
+        <name>UpdateSetComplianceUtil</name>
+        <script><![CDATA[var UpdateSetComplianceUtil = Class.create();
+
+UpdateSetComplianceUtil.INSTANCE = 'https://' + gs.getProperty('instance_name') + '.service-now.com/nav_to.do?uri=';
+UpdateSetComplianceUtil.UPDATE_SET = '7194ba27dbdfa3000a9730d86896191c';
+UpdateSetComplianceUtil.TYPES = ["Script Include", "Business Rule", "Client Script", "UI Action", "UI Script", "UI Policy"];
+//UpdateSetComplianceUtil.CLIENT_TESTS = UpdateSetComplianceUtil._getTests('client');
+//UpdateSetComplianceUtil.SERVER_TESTS = UpdateSetComplianceUtil._getTests('server');
+
+UpdateSetComplianceUtil.prototype = {
+
+    initialize: function () {
+        this.CLIENT_TESTS = this._getTests('client');
+        this.SERVER_TESTS = this._getTests('server');
+    },
+
+    runReport: function () {
+        var testObjects = this._getCustomerUpdates();
+        var testResults = {};
+        testResults.script_includes = this._testScriptInclude(this._filterCustomerUpdates(testObjects, "Script Include"));
+        testResults.business_rules = this._testBusinessRules(this._filterCustomerUpdates(testObjects, "Business Rule"));
+        testResults.client_script = this._testClientScripts(this._filterCustomerUpdates(testObjects, "Client Script"));
+        return testResults;
+    },
+
+    _getCustomerUpdates: function () {
+        var customerUpdates = [];
+        var gr = new GlideRecord('sys_update_xml');
+        //gr.addEncodedQuery('update_set=' + UpdateSetComplianceUtil.UPDATE_SET + '^ORupdate_set.base_update_set=' + UpdateSetComplianceUtil.UPDATE_SET + "^typeIN" + UpdateSetComplianceUtil.TYPES.toString());
+        gr.addEncodedQuery('typeIN' + UpdateSetComplianceUtil.TYPES.toString());
+        gr.query();
+        while (gr.next()) {
+            var record = {};
+            var xmlDoc = new XMLDocument2();
+            xmlDoc.parseXML(gr.getValue('payload'));
+            record.name = gr.getValue('target_name');
+            record.type = gr.getValue('type');
+            record.sys_id = gr.getValue('sys_id');
+            record.link = UpdateSetComplianceUtil.INSTANCE + 'sys_update_xml.do?sys_id=' + gr.sys_id;
+            record.payload = gr.getValue('payload');
+            record.script = xmlDoc.getNodeText("//script") || "";
+            record.when = xmlDoc.getNodeText("//when") || "";
+            record.collection = xmlDoc.getNodeText("//collection") || "";
+            customerUpdates.push(record);
+        }
+        return customerUpdates;
+    },
+
+    _filterCustomerUpdates: function (object, filter) {
+        var filteredObject = object.filter(function (obj) {
+            return obj.type.indexOf(filter) > -1;
+        });
+        return filteredObject;
+    },
+
+    _getTests: function (type) {
+        var tests = [];
+        var gr = new GlideRecord('x_fnmgh_update_set_compliance_tests');
+        gr.addQuery('type', type);
+        gr.addQuery('active', true);
+        gr.query();
+        while (gr.next()) {
+            var test = {};
+            test.regex = gr.getValue('regex');
+            test.error = gr.getValue('description');
+            test.expect = gr.getValue('expect');
+            tests.push(test);
+        }
+        return tests;
+    },
+
+    _testScriptInclude: function (testObjects) {
+        var returnArr = [];
+        testObjects.forEach(function (obj) {
+            var errors = [];
+            UpdateSetComplianceUtil.SERVER_TESTS.forEach(function (test) {
+                var passes = test.regex.test(obj.script);
+                if (passes != test.expect) {
+                    errors.push(test.error);
+                }
+            });
+            if (errors.length > 0) {
+                returnArr.push({
+                    name: obj.name,
+                    sys_id: obj.sys_id,
+                    link: obj.link,
+                    errors: errors
+                });
+            }
+
+        });
+        return returnArr;
+    },
+
+    _testBusinessRules: function (testObjects) {
+        var returnArr = [];
+
+        UpdateSetComplianceUtil.SERVER_TESTS.concat([{
+            regex: /^(function)((.*)\n)+}$/gm,
+            error: "Not wrapped in function",
+            expect: true
+        }]);
+
+        testObjects.forEach(function (obj) {
+
+            var errors = [];
+
+            if (obj.when == 'before') {
+                if (/current.insert\(./g.test(obj.script)) {
+                    errors.push("Avoid current.insert() in before business rules");
+                }
+                if (/current.update\(./g.test(obj.script)) {
+                    errors.push("Avoid current.update() in before business rules");
+                }
+            }
+
+            if (obj.collection == 'global') {
+                errors.push('Avoid Global Business Rules');
+            }
+
+            UpdateSetComplianceUtil.SERVER_TESTS.forEach(function (test) {
+                var passes = test.regex.test(obj.script);
+                if (passes != test.expect) {
+                    errors.push(test.error);
+                }
+            });
+            if (errors.length > 0) {
+                returnArr.push({
+                    name: obj.name,
+                    sys_id: obj.sys_id,
+                    link: obj.link,
+                    errors: errors
+                });
+            }
+
+        });
+        return returnArr;
+    },
+
+    _testClientScripts: function (testObjects) {
+        var returnArr = [];
+        testObjects.forEach(function (obj) {
+
+            var errors = [];
+            UpdateSetComplianceUtil.CLIENT_TESTS.forEach(function (test) {
+                var passes = test.regex.test(obj.script);
+                if (passes != test.expect) {
+                    errors.push(test.error);
+                }
+            });
+            if (errors.length > 0) {
+                returnArr.push({
+                    name: obj.name,
+                    sys_id: obj.sys_id,
+                    link: obj.link,
+                    errors: errors
+                });
+            }
+
+        });
+        return returnArr;
+    },
+
+    _getTablesQueried: function (update) {
+        var regex = /GlideRecord.*\(['"](.*?)['"]\)/gmi;
+        var matches = [],
+            groups = [],
+            m, a, i;
+        var gr = new GlideRecord('sys_update_xml');
+        gr.addQuery('type', 'Script Include');
+        gr.addQuery('sys_id', '3ee8655edb3327000a9730d868961925');
+        gr.query();
+        while (gr.next()) {
+            var xmlDoc = new XMLDocument2();
+            xmlDoc.parseXML(gr.getValue('payload'));
+            var script = xmlDoc.getNodeText("//script");
+
+            while ((m = regex.exec(script))) {
+                matches.push({
+                    index: m.index,
+                    length: m[0].length
+                });
+                for (i = 1, a = []; i < m.length; i++) {
+                    a.push(m[i]);
+                }
+                groups.push(a.toString());
+            }
+
+        }
+        var tables = new ArrayUtil().unique(groups);
+        return tables;
+    },
+
+    type: 'UpdateSetComplianceUtil'
+};]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2019-03-19 21:22:50</sys_created_on>
+        <sys_id>337db829dbd03b000a9730d868961922</sys_id>
+        <sys_mod_count>67</sys_mod_count>
+        <sys_name>UpdateSetComplianceUtil</sys_name>
+        <sys_package display_value="Code Report" source="x_8821_code_report">8a6c1a33db0033007d159235ca961989</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="Code Report">8a6c1a33db0033007d159235ca961989</sys_scope>
+        <sys_update_name>sys_script_include_337db829dbd03b000a9730d868961922</sys_update_name>
+        <sys_updated_by>diego.santiago</sys_updated_by>
+        <sys_updated_on>2019-03-24 19:52:25</sys_updated_on>
+    </sys_script_include>
+</record_update>

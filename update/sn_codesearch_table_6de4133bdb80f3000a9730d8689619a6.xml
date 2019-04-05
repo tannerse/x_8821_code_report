@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sn_codesearch_table">
+    <sn_codesearch_table action="INSERT_OR_UPDATE">
+        <additional_filter/>
+        <search_fields>payload,target_name</search_fields>
+        <search_group display_value="x_8821_code_report.Updates">95d4dff7db80f3000a9730d86896196d</search_group>
+        <sys_class_name>sn_codesearch_table</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2019-03-14 21:55:20</sys_created_on>
+        <sys_id>6de4133bdb80f3000a9730d8689619a6</sys_id>
+        <sys_mod_count>2</sys_mod_count>
+        <sys_name>sys_update_xml</sys_name>
+        <sys_package display_value="Code Report" source="x_8821_code_report">8a6c1a33db0033007d159235ca961989</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Code Report">8a6c1a33db0033007d159235ca961989</sys_scope>
+        <sys_update_name>sn_codesearch_table_6de4133bdb80f3000a9730d8689619a6</sys_update_name>
+        <sys_updated_by>diego.santiago</sys_updated_by>
+        <sys_updated_on>2019-03-15 08:20:36</sys_updated_on>
+        <table>sys_update_xml</table>
+    </sn_codesearch_table>
+</record_update>
